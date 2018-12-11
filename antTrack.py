@@ -8,6 +8,7 @@ from skimage import measure
 import scipy.ndimage as ndimage
 from random import randint
 import math
+import KalmanFilter as kf
 
 
 # List all images
@@ -27,13 +28,13 @@ colors = []
 # colors = dict(mcolors.BASE_COLORS, **mcolors.CSS4_COLORS)
 colors = ['#4B0082', '#FFD700', '#B22222', '#CD5C5C', '#556B2F', '#708090', '#2F4F4F', '#FFEFD5', '#000000', '#FFA07A', '#40E0D0', '#C0C0C0', '#8A2BE2', '#FFB6C1', '#D8BFD8', '#696969', '#008000', '#FAF0E6'
                                                                                                                                                                                                       '#FF6347', '#AFEEEE']
-
+statePredList = []
 for imgNum in range (len(antsImages)):
     imgColor = io.imread(mypath + antsImages[imgNum])
     img = color.rgb2gray(imgColor)
 
     # Compute Histogram of the image
-    # hist, bins_center = exposure.histogram(img)
+    hist, bins_center = exposure.histogram(img)
 
     # Thresholding the image
     binaryImg = img < 0.3
@@ -62,12 +63,15 @@ for imgNum in range (len(antsImages)):
 
     frameStates.append(objectsState)
 
+    ######################################
+    #Association
+    ######################################
+
     ### Perorm objects associations bet. current observations and previous obs.
     prevObjectsState = []
     currObjectsState = []
     newObjectsState = [None]*(17) # After association
     if imgNum > 0:
-        print np.array(frameStates).shape
         prevObjectsState = frameStates[imgNum-1]
         currObjectsState = frameStates[imgNum]
         for i in range(len(currObjectsState)):
@@ -88,6 +92,28 @@ for imgNum in range (len(antsImages)):
 
         frameStates[imgNum] = newObjectsState
         print imgNum
+    ######################################
+
+    ######################################
+    # Kalman Filter
+    ######################################
+
+    if imgNum > 0:
+        r = frameStates[imgNum][13][0]
+        c = frameStates[imgNum][13][1]
+        meas = np.matrix(frameStates[imgNum][10]).T
+
+        R = 0.01 ** 2
+        statePred, Cov = kf.kalman_xy(statePredList[imgNum-1], Cov, meas, R)
+        statePredList.append((statePred[:2]).tolist())
+        print statePredList[imgNum][0]
+        print meas
+
+    else:
+        statePred = np.matrix(frameStates[imgNum][10]).T
+        Cov = np.matrix(np.eye(2)) * 1000  # initial uncertainty
+        statePredList.append((statePred[:2]).tolist())
+    ##########################################
 
     # plt.imshow(all_objects, cmap='spectral')
 
@@ -100,10 +126,16 @@ for imgNum in range (len(antsImages)):
             row = frameStates[frameNum][objNum][0]
             col = frameStates[frameNum][objNum][1]
             # colorHash = str(colors[objNum])
-            plt.scatter(col, row, c=colors[objNum], s=10)
+            plt.scatter(col, row,  c=colors[objNum], s=10)
 
-    figName =  "associationTrack/" + str(imgNum) + ".png"
-    plt.savefig(figName, dpi=my_dpi)
-    plt.close()
-    # if imgNum%10 == 0:
-    #     plt.show()
+    for frameNum in range(len(statePredList)):
+        if frameNum != 0:
+            row = statePredList[frameNum][0][0]
+            col = statePredList[frameNum][0][1]
+            # plt.scatter(col, row, c=r'', s=30)
+
+    # figName =  "associationPredTrack/" + str(imgNum) + ".png"
+    # plt.savefig(figName, dpi=my_dpi)
+    # plt.close()
+    if imgNum%10 == 0:
+        plt.show()
